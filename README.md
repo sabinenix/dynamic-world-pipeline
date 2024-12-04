@@ -1,8 +1,13 @@
 # Science Pipeline for Dynamic World
 ### Updated: 4 December 2024
 
-### Google Earth Engine Access
+### Files
 
+- `dynamic-world-pipeline.py` -> The complete science pipeline for downloading dynamic world tifs for an area of interest and specified time range.
+- `Dynamic World LULC Pipeline.ipynb` -> A Jupyter Notebook including some more set up code and plotting outputs.
+
+### Google Earth Engine Access
+This pipeline requires a Google Earth Engine account and an existing project to have been set up. See the Jupyter Notebook for more details on this set up process.
 
 ### Config File Structure
 
