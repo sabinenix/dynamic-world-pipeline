@@ -93,6 +93,7 @@ def fetch_dynamic_world(aoi_path, date, date_buffer, nodata_threshold, out_dir):
 
     # Get the list of dates in the collection
     dates = imcol.aggregate_array('system:time_start').getInfo()
+    print(f'Full Dates: {dates}')
     dates = [np.datetime64(ee.Date(date).format('YYYY-MM-dd').getInfo()) for date in dates]
     print(f'Dynamic World Data Dates: {dates}')
 
