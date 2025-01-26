@@ -44,14 +44,17 @@ def get_bbox(path):
     
     return(aoi)
 
-def check_pct_null(image, aoi):
+def check_pct_null(image, aoi, crs, crs_transform):
     # Get the internal mask of the image and invert so nodata is 1.
     nodata_mask = image.mask().Not()
 
     # Get the number of non-null pixels with .count().
     total_pixels = image.reduceRegion(
-        reducer=ee.Reducer.count(), geometry=aoi, scale=10, maxPixels=1e8
-    ).get('label_mode').getInfo()
+        reducer=ee.Reducer.count(), 
+        geometry=aoi, 
+        crs=crs,
+        crsTransform = crs_transform, 
+        maxPixels=1e8).get('label_mode').getInfo()
 
     # If no valid pixels, return 100% nodata.
     if total_pixels is None:
@@ -59,8 +62,11 @@ def check_pct_null(image, aoi):
 
     # Get the number of nodata pixels from the mask.
     nodata_pixels = nodata_mask.reduceRegion(
-        reducer=ee.Reducer.sum(), geometry=aoi, scale=10, maxPixels=1e8
-    ).get('label_mode').getInfo()
+        reducer=ee.Reducer.sum(), 
+        geometry=aoi, 
+        crs=crs,
+        crsTransform = crs_transform, 
+        maxPixels=1e8).get('label_mode').getInfo()
 
     # Calculate the percentage of nodata pixels.
     pct_nodata = (nodata_pixels / (total_pixels + nodata_pixels)) * 100
@@ -75,8 +81,7 @@ def fetch_dynamic_world(aoi_path, start_date, end_date, out_dir):
     start_date = ee.Date(start_date)
     end_date = ee.Date(end_date)
     
-    # Get aoi bounding box polygon.
-    #aoi = get_bbox(aoi_path)
+    # Get aoi boundaries.
     aoi = get_boundaries(aoi_path)
     
     # Load the Dynamic World image collection for the aoi and dates of interest.
@@ -84,12 +89,20 @@ def fetch_dynamic_world(aoi_path, start_date, end_date, out_dir):
              .filterBounds(aoi)
              .filterDate(start_date, end_date)
             )
+    
+    # Extract CRS and CRS Transform from original raw data
+    projection = imcol.first().projection().getInfo()
+    crs = projection['crs']
+    crs_transform = projection['transform']
+    print(f"CRS: {crs}, CRS Transform: {crs_transform}")
 
     # Get the list of dates in the collection
     dates = imcol.aggregate_array('system:time_start').getInfo()
     np_dates = [np.datetime64(ee.Date(date).format('YYYY-MM-dd').getInfo()) for date in dates]
     unique_dates = np.unique(np_dates)
     print(f'Dynamic World Data Dates: {unique_dates}')
+
+    tasks = []  # List to store export tasks
 
     for date in unique_dates:
     
@@ -109,83 +122,43 @@ def fetch_dynamic_world(aoi_path, start_date, end_date, out_dir):
 
         # For label band, reduce to the most probable land cover type (using mode reducer).
         dw_label_composite = date_col.select('label').reduce(ee.Reducer.mode()).toFloat()
-        dw_label_composite = dw_label_composite.toFloat()
 
-        # For other bands, calculate mean probability across all pixels.
-        dw_bands_composite = date_col.select(['water', 'trees', 'grass', 'flooded_vegetation', 
-        'crops', 'shrub_and_scrub', 'built', 'bare', 'snow_and_ice']).reduce(ee.Reducer.mean()).toFloat()
+        # For other bands, calculate mean probability across all pixels.        
+        lc_bands = ['water', 'trees', 'grass', 'flooded_vegetation', 
+                    'crops', 'shrub_and_scrub', 'built', 'bare', 'snow_and_ice']
+        dw_bands_composite = date_col.select(lc_bands).reduce(ee.Reducer.mean()).toFloat()
 
         # Combine the label band to the other class bands.
         dw_composite = dw_bands_composite.addBands(dw_label_composite)
-
+        
         # Check the percentage of nodata pixels.
-        pct_nodata = check_pct_null(dw_composite, aoi)
+        pct_nodata = check_pct_null(dw_composite, aoi, crs, crs_transform)
         print(f"Percentage of nodata pixels: {pct_nodata}%")
 
-        # If the image is entirely nodata (i.e. the bit of the scene )
+        # If the image is entirely nodata (i.e. the bit of the scene overlapping AOI)
         if pct_nodata == 100:
             print(f"Composite for {date_str} contains only nodata. Skipping...")
             continue
 
         # Construct output file path.
-        out_path = os.path.join(out_dir, f'composite_{date_str}.tif')
+        file_name = f'composite_{date_str}'
         
         # Export the dynamic world data as a GeoTIFF.
-        geemap.ee_export_image(dw_composite, filename = out_path, scale = 10, region=aoi)
-
-    return 
-
-
-
-def fetch_dynamic_world_raw(aoi_path, start_date, end_date, out_dir):
-    """Export the raw data without compositing, including full nodata images."""
-    # Initialize Earth Engine
-    ee.Initialize()
-
-    # Set start and end dates as ee.Date
-    start_date = ee.Date(start_date)
-    end_date = ee.Date(end_date)
-    
-    # Get AOI bounding box polygon
-    #aoi = get_bbox(aoi_path)
-    aoi = get_boundaries(aoi_path)
-    
-    # Load the Dynamic World image collection for the AOI and dates of interest
-    imcol = (ee.ImageCollection('GOOGLE/DYNAMICWORLD/V1')
-             .filterBounds(aoi)
-             .filterDate(start_date, end_date)
-            )
-
-    # Get the number of images in the collection
-    num_images = imcol.size().getInfo()
-    print(f'Number of images in the collection: {num_images}')
-
-    # Get the list of all images in the collection
-    image_list = imcol.toList(num_images)
-
-    for i in range(num_images):
-        # Get the image by index
-        image = ee.Image(image_list.get(i))
+        task = ee.batch.Export.image.toDrive(dw_composite, 
+                                            description = file_name,
+                                            folder = out_dir,
+                                            region = aoi,
+                                            crs = crs,
+                                            crsTransform = crs_transform,
+                                            maxPixels = 1e13, # Maximum number of pixels to export
+                                            fileFormat = 'GeoTIFF',
+                                            formatOptions = {'cloudOptimized': True})
         
-        # Extract the image's acquisition time
-        image_date = ee.Date(image.get('system:time_start')).format('YYYY-MM-dd').getInfo()
-        print(f'Processing image for date: {image_date}')
+        tasks.append(task)
+        task.start()
+        print(f"Export task started for {date_str}")
 
-        band_names = image.bandNames().getInfo()
-        print(f'Band names for image on {image_date}: {band_names}')
-
-        # Extract the image's system:index
-        system_index = image.get('system:index').getInfo()
-
-        # Construct output file path
-        out_path = os.path.join(out_dir, f'raw_{system_index}.tif')
-
-        # Export the raw image as a GeoTIFF.
-        geemap.ee_export_image(image, filename=out_path, scale=10, region=aoi)
-        print(f"Exported raw image to {out_path}")
-    
-    return
-
+    return tasks
 
 if __name__ == "__main__":
     # Create a context using the certifi bundle.
@@ -206,7 +179,10 @@ if __name__ == "__main__":
     aoi_path = config['aoi-path']
 
     # Call function to export dynamic world raster.
-    dynamic_world_tif = fetch_dynamic_world(aoi_path, start_date, end_date, out_dir)
-    dynamic_world_tif = fetch_dynamic_world_raw(aoi_path, start_date, end_date, out_dir)
+    tasks = fetch_dynamic_world(aoi_path, start_date, end_date, out_dir)
+
+    for task in tasks:
+        status = task.status()
+        print(f"Task {status['description']} is {status['state']}")
 
 

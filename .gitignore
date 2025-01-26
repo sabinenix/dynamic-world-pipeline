@@ -1,3 +1,5 @@
 aoi
 outputs
 config*
+*pycache*
+*DS_Store*
