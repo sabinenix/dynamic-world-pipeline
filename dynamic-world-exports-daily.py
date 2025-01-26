@@ -54,7 +54,7 @@ def check_pct_null(image, aoi, crs, crs_transform):
         geometry=aoi, 
         crs=crs,
         crsTransform = crs_transform, 
-        maxPixels=1e8).get('label_mode').getInfo()
+        maxPixels=1e8).get('label').getInfo()
 
     # If no valid pixels, return 100% nodata.
     if total_pixels is None:
@@ -66,7 +66,7 @@ def check_pct_null(image, aoi, crs, crs_transform):
         geometry=aoi, 
         crs=crs,
         crsTransform = crs_transform, 
-        maxPixels=1e8).get('label_mode').getInfo()
+        maxPixels=1e8).get('label').getInfo()
 
     # Calculate the percentage of nodata pixels.
     pct_nodata = (nodata_pixels / (total_pixels + nodata_pixels)) * 100
@@ -130,6 +130,10 @@ def fetch_dynamic_world(aoi_path, start_date, end_date, out_dir):
 
         # Combine the label band to the other class bands.
         dw_composite = dw_bands_composite.addBands(dw_label_composite)
+
+        # Rename the bands to remove "_mean" and "_mode" suffixes.
+        new_band_names = lc_bands + ['label']  # Original names for lc_bands + label
+        dw_composite = dw_composite.rename(new_band_names)
         
         # Check the percentage of nodata pixels.
         pct_nodata = check_pct_null(dw_composite, aoi, crs, crs_transform)
