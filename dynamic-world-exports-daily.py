@@ -30,19 +30,19 @@ def get_boundaries(path):
         
     return(ee_polygon)
 
-def get_bbox(path):
-    """Given path to geojson, return AOI bounding box."""
+# def get_bbox(path):
+#     """Given path to geojson, return AOI bounding box."""
 
-    # Load the geojson.
-    aoi_file = gpd.read_file(path)
+#     # Load the geojson.
+#     aoi_file = gpd.read_file(path)
 
-    # Calculate the bounding box [minx, miny, maxx, maxy].
-    bounds = aoi_file.total_bounds 
+#     # Calculate the bounding box [minx, miny, maxx, maxy].
+#     bounds = aoi_file.total_bounds 
     
-    # Create an ee.Geometry object from the bounding box.
-    aoi = ee.Geometry.Rectangle([bounds[0], bounds[1], bounds[2], bounds[3]])
+#     # Create an ee.Geometry object from the bounding box.
+#     aoi = ee.Geometry.Rectangle([bounds[0], bounds[1], bounds[2], bounds[3]])
     
-    return(aoi)
+#     return(aoi)
 
 def check_pct_null(image, aoi, crs, crs_transform):
     # Get the internal mask of the image and invert so nodata is 1.
@@ -123,17 +123,29 @@ def fetch_dynamic_world(aoi_path, start_date, end_date, out_dir):
         # For label band, reduce to the most probable land cover type (using mode reducer).
         dw_label_composite = date_col.select('label').reduce(ee.Reducer.mode()).toFloat()
 
+        print(f'Label Composite CRS: {dw_label_composite.projection().getInfo()['crs']}')
+        print(f'Label Composite Transform: {dw_label_composite.projection().getInfo()['transform']}')
+
         # For other bands, calculate mean probability across all pixels.        
         lc_bands = ['water', 'trees', 'grass', 'flooded_vegetation', 
                     'crops', 'shrub_and_scrub', 'built', 'bare', 'snow_and_ice']
         dw_bands_composite = date_col.select(lc_bands).reduce(ee.Reducer.mean()).toFloat()
 
+        print(f'Bands Composite CRS: {dw_bands_composite.projection().getInfo()['crs']}')
+        print(f'Bands Composite Transform: {dw_bands_composite.projection().getInfo()['transform']}')
+
         # Combine the label band to the other class bands.
         dw_composite = dw_bands_composite.addBands(dw_label_composite)
+
+        print(f'Bands Composite CRS: {dw_bands_composite.projection().getInfo()['crs']}')
+        print(f'Bands Composite Transform: {dw_bands_composite.projection().getInfo()['transform']}')
 
         # Rename the bands to remove "_mean" and "_mode" suffixes.
         new_band_names = lc_bands + ['label']  # Original names for lc_bands + label
         dw_composite = dw_composite.rename(new_band_names)
+
+        print(f'Full Composite CRS: {dw_composite.projection().getInfo()['crs']}')
+        print(f'Full Composite Transform: {dw_composite.projection().getInfo()['transform']}')
         
         # Check the percentage of nodata pixels.
         pct_nodata = check_pct_null(dw_composite, aoi, crs, crs_transform)
@@ -146,6 +158,12 @@ def fetch_dynamic_world(aoi_path, start_date, end_date, out_dir):
 
         # Construct output file path.
         file_name = f'composite_{date_str}'
+
+        # # Set the NoData Value to -9999
+        # # https://developers.google.com/earth-engine/guides/exporting_images#nodata
+        # noDataVal = -9999
+        # dw_composite.unmask(noDataVal, sameFootprint = False)
+
         
         # Export the dynamic world data as a GeoTIFF.
         task = ee.batch.Export.image.toDrive(dw_composite, 
@@ -186,7 +204,11 @@ if __name__ == "__main__":
     tasks = fetch_dynamic_world(aoi_path, start_date, end_date, out_dir)
 
     for task in tasks:
+        print(f"task: {task}")
+        print(f"Task ID: {task.id}")
         status = task.status()
         print(f"Task {status['description']} is {status['state']}")
+
+    #print(ee.data.getTaskStatus("TUWAPFM6RG6IDXAPD7E3CKMK"))
 
 
