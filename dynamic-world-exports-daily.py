@@ -72,7 +72,7 @@ def get_utm_projection(geojson_path, geometry):
     epsg = utm_crs.to_epsg()
     target_crs = f'EPSG:{epsg}'
 
-    # Get the Dynamic World collection that intersects the AOI
+    # Get the Dynamic World collection that intersects the AOI.
     collection = ee.ImageCollection('GOOGLE/DYNAMICWORLD/V1').filterBounds(geometry)
     
     # Add a property to each image indicating if it matches our target CRS
@@ -84,24 +84,21 @@ def get_utm_projection(geojson_path, geometry):
     
     images_with_matches = collection.map(add_crs_match)
     
-    # Try to find an image with a matching CRS
+    # Get the first image that matches the target CRS.
     matching_image = images_with_matches.filter(ee.Filter.eq('crs_match', 1)).first()
     
-    # Get the first image as a fallback
+    # In case no images match (shouldn't be the case), use the first image.
     first_image = collection.first()
     
-    # To check if matching_image exists, we'll need to do a client-side check
-    # Get collection size for simpler logic
+    # Check if any images match the target CRS.
     matching_size = images_with_matches.filter(ee.Filter.eq('crs_match', 1)).size().getInfo()
     
     if matching_size > 0:
-        # Use the matching image
         final_image = matching_image
     else:
-        # Use the first image
         final_image = first_image
     
-    # Get projection info
+    # Get projection info.
     proj_info = final_image.projection().getInfo()
     
     return {
