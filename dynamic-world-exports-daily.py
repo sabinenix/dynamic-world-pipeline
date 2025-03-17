@@ -39,20 +39,13 @@ def check_pct_null(image, aoi, crs, crs_transform):
     total_pixels = image.reduceRegion(
         reducer=ee.Reducer.count(), 
         geometry=aoi, 
-        #crs=crs,
-        #crsTransform = crs_transform, 
         maxPixels=1e8).get('label')
 
-    # # If no valid pixels, return 100% nodata.
-    # if total_pixels is None:
-    #     return 100.0  
 
     # Get the number of nodata pixels from the mask.
     nodata_pixels = nodata_mask.reduceRegion(
         reducer=ee.Reducer.sum(), 
         geometry=aoi, 
-        #crs=crs,
-        #crsTransform = crs_transform, 
         maxPixels=1e8).get('label')
 
     # Compute percentage of nodata pixels
@@ -60,7 +53,7 @@ def check_pct_null(image, aoi, crs, crs_transform):
 
     return pct_nodata
 
-
+# TODO: Switch to using lookup table approach here
 def get_utm_projection(geojson_path, geometry):
     """
     Get the UTM projection for the AOI using geopandas, using transform from Dynamic World.
@@ -136,12 +129,6 @@ def fetch_dynamic_world(aoi, start_date, end_date, out_dir, utm_proj):
              .map(lambda image: image.set('n_valid_pixels', n_valid_pixels(image, aoi)))
              # Filter out images with no valid pixels.
              .filter(ee.Filter.gt('n_valid_pixels', 0)))
-    
-    # # Extract CRS and CRS Transform from original raw data (TODO: remove this section).
-    # projection = imcol.first().projection().getInfo() # Avoid .getInfo!! 
-    # crs = projection['crs']
-    # crs_transform = projection['transform']
-    # print(f"ORIGINAL METHOD: CRS: {crs}, CRS Transform: {crs_transform}")
 
     # Get list of dates in the collection (more efficient method than previous).
     unique_dates = imcol.aggregate_array('system:time_start') \
@@ -165,13 +152,11 @@ def fetch_dynamic_world(aoi, start_date, end_date, out_dir, utm_proj):
         date_col = imcol.filterDate(ee_start_date, ee_end_date)
 
         # For label band, reduce to the most probable land cover type (using mode reducer).
-        #dw_label_composite = date_col.select('label').reduce(ee.Reducer.mode()).toFloat()
         dw_label_composite = date_col.select('label').mode().toFloat()
 
         # For other bands, calculate mean probability across all pixels.        
         lc_bands = ['water', 'trees', 'grass', 'flooded_vegetation', 
                     'crops', 'shrub_and_scrub', 'built', 'bare', 'snow_and_ice']
-        #dw_bands_composite = date_col.select(lc_bands).reduce(ee.Reducer.mean()).toFloat()
         dw_bands_composite = date_col.select(lc_bands).mean().toFloat()
 
         # Combine the label band to the other class bands.
@@ -190,8 +175,6 @@ def fetch_dynamic_world(aoi, start_date, end_date, out_dir, utm_proj):
                                             description = file_name,
                                             folder = out_dir,
                                             region = aoi,
-                                            #crs = crs,
-                                            #crsTransform = crs_transform,
                                             crs = utm_proj['crs'],
                                             crsTransform = utm_proj['transform'],
                                             maxPixels = 1E7, # Setting max to 1 million pixels (~1000km^2 with 10m pixels) as safeguard
@@ -228,8 +211,6 @@ if __name__ == "__main__":
 
     # Get UTM projection and transform from center of AOI.
     utm_proj = get_utm_projection(aoi_path, aoi)
-
-    print(f"UTM Proj GEOPANDAS: {utm_proj['crs'], utm_proj['transform']}")
 
     # Call function to export dynamic world raster.
     tasks = fetch_dynamic_world(aoi, start_date, end_date, out_dir, utm_proj)
