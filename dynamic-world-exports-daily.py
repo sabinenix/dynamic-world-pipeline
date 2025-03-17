@@ -180,10 +180,10 @@ def fetch_dynamic_world(aoi, start_date, end_date, out_dir, utm_proj):
         # Construct output file path.
         file_name = f'composite_{date_str}'
 
-        # # Set the NoData Value to -9999
-        # # https://developers.google.com/earth-engine/guides/exporting_images#nodata
-        # noDataVal = -9999
-        # dw_composite.unmask(noDataVal, sameFootprint = False)
+        # Set the NoData Value to -9999
+        # https://developers.google.com/earth-engine/guides/exporting_images#nodata
+        noDataVal = -9999
+        dw_composite.unmask(noDataVal, sameFootprint = True)
 
         # Export the dynamic world data as a GeoTIFF.
         task = ee.batch.Export.image.toDrive(dw_composite, 
@@ -196,10 +196,11 @@ def fetch_dynamic_world(aoi, start_date, end_date, out_dir, utm_proj):
                                             crsTransform = utm_proj['transform'],
                                             maxPixels = 1E7, # Setting max to 1 million pixels (~1000km^2 with 10m pixels) as safeguard
                                             fileFormat = 'GeoTIFF',
-                                            formatOptions = {'cloudOptimized': True})
+                                            formatOptions = {'cloudOptimized': True,
+                                                             'noData': noDataVal})
         
         tasks.append(task)
-        #task.start()
+        task.start()
         print(f"Export task started for {date_str}")
 
     return tasks
