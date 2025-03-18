@@ -8,6 +8,7 @@ from shapely.geometry import mapping
 import cartopy.crs as ccrs 
 import os
 import yaml
+import pandas as pd
 
 # Google Earth Engine imports:
 import ee
@@ -68,35 +69,21 @@ def get_utm_projection(geojson_path, geometry):
     # Get the Dynamic World collection that intersects the AOI.
     collection = ee.ImageCollection('GOOGLE/DYNAMICWORLD/V1').filterBounds(geometry)
     
-    # Add a property to each image indicating if it matches our target CRS
-    def add_crs_match(img):
-        proj = img.projection()
-        crs = ee.String(proj.crs())
-        match = crs.equals(target_crs)
-        return img.set('crs_match', match)
+    # Read the lookup table csv with UTM zone transforms.
+    lut_df = pd.read_csv('dw_UTM_crs_lut.csv')
+
+    # Get the transform from the lookup table for the target CRS.
+    transform_row = lut_df[lut_df['crs'] == target_crs]
     
-    images_with_matches = collection.map(add_crs_match)
-    
-    # Get the first image that matches the target CRS.
-    matching_image = images_with_matches.filter(ee.Filter.eq('crs_match', 1)).first()
-    
-    # In case no images match (shouldn't be the case), use the first image.
-    first_image = collection.first()
-    
-    # Check if any images match the target CRS.
-    matching_size = images_with_matches.filter(ee.Filter.eq('crs_match', 1)).size().getInfo()
-    
-    if matching_size > 0:
-        final_image = matching_image
+    if not transform_row.empty:
+        transform = transform_row['transform'].values[0]
+        print(f"Using transform from lookup table for {target_crs}, transform: {transform}")
     else:
-        final_image = first_image
-    
-    # Get projection info.
-    proj_info = final_image.projection().getInfo()
+        raise ValueError(f"UTM transform not found for {target_crs}")
     
     return {
         'crs': target_crs,  # Always use the target CRS (UTM zone from AOI)
-        'transform': proj_info['transform']
+        'transform': transform # Use the transform from the lookup table
     }
 
 def n_valid_pixels(image, aoi):
